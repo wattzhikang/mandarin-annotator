@@ -24,9 +24,11 @@ module.exports = class SpanMachine {
 
     this.element.spanComputer = this;
     this.element.addEventListener('mouseenter', function(event) {
+      event.target.spanComputer.hovering = true;
       event.target.spanComputer.popup();
     });
     this.element.addEventListener('mouseleave', function(event) {
+      event.target.spanComputer.hovering = false;
       event.target.spanComputer.popdown();
     });
     this.element.addEventListener('click', function(event) {
@@ -34,6 +36,7 @@ module.exports = class SpanMachine {
     });
 
     this.editMode = false;
+    this.hovering = false;
   }
 
   _createEditPopover() {
@@ -154,8 +157,9 @@ module.exports = class SpanMachine {
   }
 
   cancel() {
-    //just redraw the popover. it will revert to whatever has been already saved to the database
-    this._createEditPopover();
+    //exit edit mode without saving; toggleEditMode() reverts to the regular popup
+    //since it will re-read from the database rather than whatever was typed
+    this.toggleEditMode();
   }
 
   save() {
@@ -184,15 +188,6 @@ module.exports = class SpanMachine {
       $(this.element).prev().each( function(index, element) {
         element.spanComputer = new SpanMachine(element);
       });
-      $(this.element).prev().mouseenter(function(event) {
-        event.target.spanComputer.popup();
-      });
-      $(this.element).prev().click(function(event) {
-        event.target.spanComputer.toggleEditMode();
-      });
-      $(this.element).prev().mouseleave(function(event) {
-        event.target.spanComputer.popdown();
-      })
 
       this.element.innerHTML = this.element.innerHTML.substr(1);
       this._createEditPopover();
@@ -207,15 +202,6 @@ module.exports = class SpanMachine {
       $(this.element).next().each( function(index, element) {
         element.spanComputer = new SpanMachine(element);
       });
-      $(this.element).next().mouseenter(function(event) {
-        event.target.spanComputer.popup();
-      });
-      $(this.element).next().click(function(event) {
-        event.target.spanComputer.toggleEditMode();
-      });
-      $(this.element).next().mouseleave(function(event) {
-        event.target.spanComputer.popdown();
-      })
 
       this.element.innerHTML = this.element.innerHTML.substr(0,len-1);
       this._createEditPopover();
@@ -262,10 +248,17 @@ module.exports = class SpanMachine {
       this.editMode = true;
     } else if (this.editMode) { //else in edit mode
       bootstrap.Popover.getInstance(this.element)?.dispose();
-      //regular word popup
-      this.popup();
       this.editMode = false;
       anyEditMode = false;
+      //only reopen the regular word popup if the mouse is actually still over
+      //this span - exiting via a button click (e.g. Cancel) moves the mouse
+      //off the span, and it won't fire mouseleave again to close a popup
+      //opened here unconditionally
+      if (this.hovering) {
+        this.popup();
+      } else {
+        $(this.element).css("background-color", "");
+      }
     }
   }
 
