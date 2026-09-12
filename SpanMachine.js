@@ -12,6 +12,14 @@ var database = new Dictionary();
 //a global variable indicating whether or not any popover anywhere in the document is in edit mode
 var anyEditMode = false;
 
+//the SpanMachine (if any) that currently owns the one popover allowed to be
+//open at a time (hover popup or edit popover). Moving the mouse over a word
+//while another word's popover is open (most commonly while that popover is
+//in edit mode, since edit popovers don't close on mouseleave) must not open
+//a second popover - there's only one mouse, so only one popover should ever
+//be open.
+var activePopoverSpan = null;
+
 //allow button elements for the sanitizer (it's a Bootstrap thing)
 let nAllowList = bootstrap.Tooltip.Default.allowList;
 nAllowList.button = ["type"];
@@ -241,15 +249,21 @@ module.exports = class SpanMachine {
   }
 
   toggleEditMode() {
-    if (!this.editMode && !anyEditMode) { //if not in edit mode, and no one else in edit mode
+    //if not in edit mode, no one else in edit mode, and no other span's
+    //popover is currently occupying the one-popover-at-a-time slot
+    if (!this.editMode && !anyEditMode && (activePopoverSpan === null || activePopoverSpan === this)) {
       this._createEditPopover();
 
+      activePopoverSpan = this;
       anyEditMode = true;
       this.editMode = true;
     } else if (this.editMode) { //else in edit mode
       bootstrap.Popover.getInstance(this.element)?.dispose();
       this.editMode = false;
       anyEditMode = false;
+      if (activePopoverSpan === this) {
+        activePopoverSpan = null;
+      }
       //only reopen the regular word popup if the mouse is actually still over
       //this span - exiting via a button click (e.g. Cancel) moves the mouse
       //off the span, and it won't fire mouseleave again to close a popup
@@ -263,6 +277,19 @@ module.exports = class SpanMachine {
   }
 
   popup() {
+    //there's only one mouse - don't open a second popover while a popover
+    //(this span's own edit popover included) is already open. Editing a word
+    //can change its on-screen size (e.g. expandRight growing it to cover
+    //where the mouse already sits), which fires a fresh mouseenter on the
+    //very span that's already showing its edit popover; letting popup() run
+    //there would stack a second bootstrap.Popover instance on the same
+    //element, and since Bootstrap's instance registry only remembers the
+    //newest one, the edit popover's Cancel/Save button would go on
+    //disposing the wrong instance and never close.
+    if (activePopoverSpan !== null || this.editMode) {
+      return;
+    }
+
     let popContent = "";
     let words = database.getDefinitions(this.element.textContent, true);
     if (words.length > 0) {
@@ -273,13 +300,16 @@ module.exports = class SpanMachine {
         for (let def of word.definitions) {
           popContent += "<li>" + def + "</li>";
         }
-        popContent += "</ul>";        
+        popContent += "</ul>";
       }
     } else {
       popContent += "<h5>" + this.element.innerHTML + "</h5>";
       popContent += "<h6>There is no entry in the<br/>dictionary for this string</h6>";
     }
 
+    bootstrap.Popover.getInstance(this.element)?.dispose();
+
+    activePopoverSpan = this;
     $(this.element).css("background-color", "lightgray");
     new bootstrap.Popover(this.element, {
       content: popContent,
@@ -295,6 +325,9 @@ module.exports = class SpanMachine {
     if (!this.editMode) {
       bootstrap.Popover.getInstance(this.element)?.dispose();
       $(this.element).css("background-color", "");
+      if (activePopoverSpan === this) {
+        activePopoverSpan = null;
+      }
     }
   }
 }

@@ -1,6 +1,19 @@
-const {app, BrowserWindow} = require("electron");
+const {app, BrowserWindow, ipcMain, dialog} = require("electron");
+const fs = require("fs");
 
 let win
+
+ipcMain.handle("save-seg-file", async (event, defaultPath, content) => {
+    let result = await dialog.showSaveDialog(win, {
+        defaultPath: defaultPath,
+        filters: [{ name: "Segmented Text", extensions: ["seg"] }]
+    });
+    if (result.canceled || !result.filePath) {
+        return null;
+    }
+    fs.writeFileSync(result.filePath, content, "utf8");
+    return result.filePath;
+});
 
 function createWindow() {
     win = new BrowserWindow({

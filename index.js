@@ -2,9 +2,11 @@
 
 let $ = require("jquery");
 let fs = require('fs');
-let { webUtils } = require('electron');
+let path = require('path');
+let { webUtils, ipcRenderer } = require('electron');
 let SpanMachine = require('./SpanMachine');
 let Dictionary = require('./dictionary');
+let { segmentText } = require('./segmenter');
 
 var database = new Dictionary();
 
@@ -19,6 +21,54 @@ function loadWords(words) {
             2
         );
     }
+}
+
+//builds the DOM for a document body (one paragraph per line, words
+//space-separated, '#'/'##' as the first token making a heading) and appends
+//it to the page. Used both when loading a .seg file and when loading a
+//freshly-segmented raw text.
+function renderText(data) {
+    //create div for whole text
+    let docDiv = document.createElement('div');
+    docDiv.id = 'chineseText';
+
+    //add one line at a time
+    //be sure to add the spanMachine to each word span
+    let lines = data.split('\n');
+    for (let line of lines) {
+        line = line.trim().split(' ');
+        if (line.length < 1) {
+            continue;
+        }
+
+        let paragraph = document.createElement('p');
+        if (line[0] === "#") {
+            //make it a heading
+            paragraph.classList.add('a');
+            line.shift();
+        } else if (line[0] === '##') {
+            //smaller heading
+            paragraph.classList.add('b');
+            line.shift();
+        }
+
+        for (let word of line) {
+            let element = document.createElement('span');
+
+            //if it is a chinese character, it should be defined
+            if (/\p{Script=Han}/u.test(word)) {
+                element.classList.add('simplified');
+                new SpanMachine(element);
+            }
+            element.innerHTML = word;
+
+            paragraph.appendChild(element);
+        }
+
+        docDiv.appendChild(paragraph);
+    }
+
+    document.body.appendChild(docDiv);
 }
 
 function loadFile(err, data) {
@@ -63,48 +113,47 @@ function loadFile(err, data) {
     } else {
         console.log('json not detected');
     }
-    
-    //create div for whole text
-    let docDiv = document.createElement('div');
-    docDiv.id = 'chineseText';
 
-    //add one line at a time
-    //be sure to add the spanMachine to each word span
-    let lines = data.split('\n');
-    for (let line of lines) {
-        line = line.trim().split(' ');
-        if (line.length < 1) {
-            continue;
+    renderText(data);
+}
+
+//loads a plain, unsegmented text file and renders it after running the
+//longest-match segmentation algorithm against the dictionary
+function segmentFile(err, data) {
+    let wordExists = word => database.getDefinitions(word, true).length > 0;
+    renderText(segmentText(data, wordExists));
+}
+
+//reconstructs the .seg-format text (JSON header of TEXT-level word
+//overrides, followed by the document body) from the current DOM state
+function serializeSegFile() {
+    let entries = database.getCustomDefs(2); //TEXT level
+    let header = {
+        charSet: "simplified",
+        words: entries.map(entry => ({
+            tradChars: entry.tradChars,
+            simpChars: entry.simpChars,
+            pinyin: entry.pinyin,
+            defs: entry.defs.map(def => def.definition)
+        }))
+    };
+
+    let lines = $('#chineseText > p').map(function(index, p) {
+        let prefix = '';
+        if ($(p).hasClass('a')) {
+            prefix = '# ';
+        } else if ($(p).hasClass('b')) {
+            prefix = '## ';
         }
 
-        let paragraph = document.createElement('p');
-        if (line[0] === "#") {
-            //make it a heading
-            paragraph.classList.add('a');
-            line.shift();
-        } else if (line[0] === '##') {
-            //smaller heading
-            paragraph.classList.add('b');
-            line.shift();
-        }
+        let words = $(p).children('span').map(function(i, span) {
+            return span.textContent;
+        }).get();
 
-        for (let word of line) {
-            let element = document.createElement('span');
+        return prefix + words.join(' ');
+    }).get();
 
-            //if it is a chinese character, it should be defined
-            if (/\p{Script=Han}/u.test(word)) {
-                element.classList.add('simplified');
-                new SpanMachine(element);
-            }
-            element.innerHTML = word;
-
-            paragraph.appendChild(element);
-        }
-
-        docDiv.appendChild(paragraph);
-    }
-
-    document.body.appendChild(docDiv);
+    return JSON.stringify(header, null, 4) + '\n\n' + lines.join('\n\n') + '\n';
 }
 
 /*
@@ -306,6 +355,29 @@ $(function() {
     $('#closeText').click(function(event) {
         $('#chineseText').remove();
         database.clearTextDefs();
+    });
+    $('#segmentText').click(function(event) {
+        if ($('#chineseText').length < 1) {
+            let file = $('#rawFileChooser').prop('files')[0];
+            fs.readFile(webUtils.getPathForFile(file), 'utf8', segmentFile);
+        }
+    });
+    $('#saveText').click(async function(event) {
+        if ($('#chineseText').length < 1) {
+            return;
+        }
+
+        let content = serializeSegFile();
+
+        let file = $('#fileChooser').prop('files')[0] || $('#rawFileChooser').prop('files')[0];
+        let defaultPath = 'text.seg';
+        if (file) {
+            let sourcePath = webUtils.getPathForFile(file);
+            let base = path.basename(sourcePath, path.extname(sourcePath));
+            defaultPath = path.join(path.dirname(sourcePath), base + '.seg');
+        }
+
+        await ipcRenderer.invoke('save-seg-file', defaultPath, content);
     });
     $('#vocabEditorToggle').click(function(event) {
         createVocabEditor();
