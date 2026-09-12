@@ -1,6 +1,6 @@
 window.$ = window.jQuery = require("jquery");
 
-require("bootstrap");
+let bootstrap = require("bootstrap");
 
 let Dictionary = require("./dictionary");
 let DictLevel = require("./databaseLevel");
@@ -12,10 +12,10 @@ var database = new Dictionary();
 //a global variable indicating whether or not any popover anywhere in the document is in edit mode
 var anyEditMode = false;
 
-//whitelist button elements for the sanitizer (it's a Bootstrap thing)
-let nWhiteList = $.fn.tooltip.Constructor.Default.whiteList;
-nWhiteList.button = ["type"];
-nWhiteList.input = ["value", "type"];
+//allow button elements for the sanitizer (it's a Bootstrap thing)
+let nAllowList = bootstrap.Tooltip.Default.allowList;
+nAllowList.button = ["type"];
+nAllowList.input = ["value", "type"];
 
 module.exports = class SpanMachine {
 
@@ -37,7 +37,7 @@ module.exports = class SpanMachine {
   }
 
   _createEditPopover() {
-    $(this.element).popover('dispose');
+    bootstrap.Popover.getInstance(this.element)?.dispose();
 
     let popContent = "";
     let words = database.getDefinitions(this.element.textContent, true);
@@ -80,15 +80,14 @@ module.exports = class SpanMachine {
       popContent += '<button type="button" id="breakRight" class="btn">o</button></div>';
     }
 
-    $(this.element).popover({
+    new bootstrap.Popover(this.element, {
       content: popContent,
       delay: 0,
       html: true,
       placement: "bottom",
       trigger: "manual",
-      whiteList: nWhiteList
-    });
-    $(this.element).popover('show');
+      allowList: nAllowList
+    }).show();
 
     //add the appropriate listeners to the buttons
 
@@ -262,7 +261,7 @@ module.exports = class SpanMachine {
       anyEditMode = true;
       this.editMode = true;
     } else if (this.editMode) { //else in edit mode
-      $(this.element).popover('dispose');
+      bootstrap.Popover.getInstance(this.element)?.dispose();
       //regular word popup
       this.popup();
       this.editMode = false;
@@ -289,20 +288,19 @@ module.exports = class SpanMachine {
     }
 
     $(this.element).css("background-color", "lightgray");
-    $(this.element).popover({
+    new bootstrap.Popover(this.element, {
       content: popContent,
       delay: 300,
       html: true,
       placement: "bottom",
       trigger: "manual",
-      whiteList: nWhiteList
-    });
-    $(this.element).popover('show');
+      allowList: nAllowList
+    }).show();
   }
 
   popdown() {
     if (!this.editMode) {
-      $(this.element).popover('dispose');
+      bootstrap.Popover.getInstance(this.element)?.dispose();
       $(this.element).css("background-color", "");
     }
   }

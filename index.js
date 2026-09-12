@@ -2,6 +2,7 @@
 
 let $ = require("jquery");
 let fs = require('fs');
+let { webUtils } = require('electron');
 let SpanMachine = require('./SpanMachine');
 let Dictionary = require('./dictionary');
 
@@ -298,7 +299,8 @@ function createVocabEditor() {
 $(function() {
     $('#loadDict').click(function(event) {
         if ($('#chineseText').length < 1) {
-            fs.readFile($('#fileChooser').prop('files')[0].path, 'utf8', loadFile);
+            let file = $('#fileChooser').prop('files')[0];
+            fs.readFile(webUtils.getPathForFile(file), 'utf8', loadFile);
         }
     });
     $('#closeText').click(function(event) {
